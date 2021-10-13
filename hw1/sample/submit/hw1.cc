@@ -1,27 +1,14 @@
 #include <iostream>
-#include <boost/sort/spreadsort/float_sort.hpp>
-#include <vector>
-#include <deque>
+#include <math.h>
 #include <mpi.h>
-#define CAST_TYPE int
-#define DATA_TYPE float
+#include <algorithm>
 
 using namespace std;
-using namespace boost::sort::spreadsort;
 
 float* data;
 float* temp_buffer;
 float* put_buffer;
-unsigned int* changed_data;
 
-// make float sort in acending order
-struct rightshift{
-inline CAST_TYPE operator()(const DATA_TYPE &x, const unsigned offset) const {
-    return float_mem_cast<DATA_TYPE, CAST_TYPE>(x) >> offset;
-  }
-};
-
-// odd-even sort
 void exchange(int flag, int neighbor_total, int n, int rank) {
   int self, neighbor, run, neighbor_run;
   bool tmp = false;
@@ -103,7 +90,6 @@ int main(int argc, char** argv) {
   data = new float[n / size + size];
   temp_buffer = new float[n / size + size];
   put_buffer = new float[n/ size + size];
-  changed_data = new unsigned int[n / size + size];
 
   // read input
   int check = MPI_File_open(MPI_COMM_WORLD, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, &f);
@@ -114,8 +100,8 @@ int main(int argc, char** argv) {
   MPI_File_read_at(f, offset, data, total, MPI_FLOAT, MPI_STATUS_IGNORE);
   MPI_File_close(&f);
 
-  // float_sort
-  float_sort(data, data+total, rightshift());
+  // sort 
+  sort(data, data+total);
 
   // start odd-even sort
   flag = 0;
@@ -156,7 +142,6 @@ int main(int argc, char** argv) {
 
     flag = (flag == 0) ? 1 : 0;
   }
-
   // write back 
   check = MPI_File_open(MPI_COMM_WORLD, argv[3], MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &f);
   if (check != MPI_SUCCESS) {
@@ -167,9 +152,9 @@ int main(int argc, char** argv) {
   MPI_File_close(&f);
 
   // calculate total time
-  // if (rank == 0) {
-  //   cout << "total time: " << MPI_Wtime() - start_time << endl;
-  // }
+  if (rank == 0) {
+    cout << "total time: " << MPI_Wtime() - start_time << endl;
+  }
   MPI_Finalize();
 
   return 0;

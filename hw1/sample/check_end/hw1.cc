@@ -12,7 +12,6 @@ using namespace boost::sort::spreadsort;
 float* data;
 float* temp_buffer;
 float* put_buffer;
-unsigned int* changed_data;
 
 // make float sort in acending order
 struct rightshift{
@@ -103,7 +102,6 @@ int main(int argc, char** argv) {
   data = new float[n / size + size];
   temp_buffer = new float[n / size + size];
   put_buffer = new float[n/ size + size];
-  changed_data = new unsigned int[n / size + size];
 
   // read input
   int check = MPI_File_open(MPI_COMM_WORLD, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, &f);
