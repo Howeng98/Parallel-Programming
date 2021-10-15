@@ -21,42 +21,54 @@ inline CAST_TYPE operator()(const DATA_TYPE &x, const unsigned offset) const {
 };
 
 // odd-even sort
-bool exchange(int flag, int neighbor_total, int total, int rank) {
-  if ((flag == 0 && rank % 2 == 1) || (flag == 1 && rank % 2 == 0)) {
-    if (flag == 0 && rank % 2 == 1 && temp_buffer[neighbor_total-1] <= data[0]) return true;
-    else if (flag == 1 && rank % 2 == 0 && temp_buffer[neighbor_total-1] <= data[0]) return true;
-    int run_n, run;
-    run_n = neighbor_total - 1;
-    run = total - 1;
-    for (int i = total - 1; i >= 0; i--) {
-      if (run_n >= 0 && temp_buffer[run_n] > data[run]) {
-        put_buffer[i] = temp_buffer[run_n];
-        run_n -= 1;
-      } else {
-        put_buffer[i] = data[run];
-        run -= 1;
-      }
-    }
+void exchange(int flag, int neighbor_total, int n, int rank) {
+  int self, neighbor, run, neighbor_run;
+  bool tmp = false;
+  float num;
+  MPI_Status status;
+  self = neighbor = run = neighbor_run = 0;
+  
+  // check if no need to change
+  if (data[0] >= temp_buffer[neighbor_total-1]) {
+    tmp = true;
+    MPI_Send(&tmp, 1, MPI_C_BOOL, rank - 1, 0, MPI_COMM_WORLD);
+    return;
   } else {
-    if (flag == 0 && rank % 2 == 0 && temp_buffer[0] >= data[total-1]) return true;
-    else if (flag == 1 && rank % 2 == 1 && temp_buffer[0] >= data[total-1]) return true;
-    int run_n, run;
-    run_n = 0;
-    run = 0;
-    for (int i = 0; i < total; i++) {
-      if (run_n <= neighbor_total && temp_buffer[run_n] < data[run]) {
-        put_buffer[i] = temp_buffer[run_n];
-        run_n += 1;
-      } else {
-        put_buffer[i] = data[run];
-        run += 1;
-      }
-    }
+    tmp = false;
+    MPI_Send(&tmp, 1, MPI_C_BOOL, rank - 1, 0, MPI_COMM_WORLD);
   }
 
-  for (int i = 0; i < total; i++) data[i] = put_buffer[i];
-
-  return false;
+  // start to sort element
+  while (self < n || neighbor < neighbor_total) {
+    if (neighbor_run < neighbor_total) {
+      if (data[self] <= temp_buffer[neighbor]) {
+        num = data[self];
+        self += 1;
+      } else {
+        num = temp_buffer[neighbor];
+        neighbor += 1;
+      }
+      put_buffer[neighbor_run] = num;
+      neighbor_run += 1;
+    } else {
+      if (self == n) {
+        num = temp_buffer[neighbor];
+        neighbor += 1;
+      } else if (neighbor == neighbor_total) {
+        num = data[self];
+        self += 1;
+      } else if (data[self] <= temp_buffer[neighbor]) {
+        num = data[self];
+        self += 1;
+      } else {
+        num = temp_buffer[neighbor];
+        neighbor += 1;
+      }
+      data[run] = num;
+      run += 1;
+    }
+  }
+  MPI_Send(put_buffer, neighbor_total, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
 }
 
 int main(int argc, char** argv) {
@@ -64,17 +76,7 @@ int main(int argc, char** argv) {
   bool odd = false;
   bool even = false;
   bool result = false;
-  bool now = false;
-  bool left_check, right_check;
   double starttime, endtime;
-  int start;
-  int end;
-  int total;
-  unsigned long long offset;
-  int neighbor_total, left_total, right_total;
-
-  left_total = right_total = 0;
-  left_check = right_check = false;
   n = atoll(argv[1]);
 
   MPI_Init(&argc, &argv);
@@ -82,7 +84,11 @@ int main(int argc, char** argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   MPI_Status status;
   MPI_File f;
-  bool all_status[size] = {false};
+  int start;
+  int end;
+  int total;
+  unsigned long long offset;
+  int neighbor_total;
 
   // start time
   double start_time = MPI_Wtime();
@@ -111,55 +117,39 @@ int main(int argc, char** argv) {
 
   // start odd-even sort
   flag = 0;
-  while(!result) {
+  for (int j = 0; j < size+1; j++) {
     if (flag == 0) { // even sort
       if (rank % 2 == 0 && rank == size -1) {
         odd = true;
       } else if (rank % 2 == 1) {
-        if (!left_check) {
-          left_check = true;
-          MPI_Sendrecv(&total, 1, MPI_INT, rank - 1, 0, &left_total, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status);
-        }
-        if (left_total != 0 && total != 0) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
-          odd = exchange(flag, left_total, total, rank);
-        }
+        MPI_Recv(&neighbor_total, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(temp_buffer, neighbor_total, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
+        exchange(flag, neighbor_total, total, rank);
       } else {
-        if (!right_check) {
-          right_check = true;
-          MPI_Sendrecv(&total, 1, MPI_INT, rank + 1, 0, &right_total, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD, &status);
-        }
-        if (right_total != 0 && total != 0) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
-          odd = exchange(flag, right_total, total, rank);
+        MPI_Send(&total, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
+        MPI_Send(data, total, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
+        bool tmp;
+        MPI_Recv(&tmp, 1, MPI_C_BOOL, rank + 1, 0, MPI_COMM_WORLD, &status);
+        if (!tmp) {
+          MPI_Recv(data, total, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
         }
       }
     } else { // odd sort
       if (rank == 0 || (rank == size - 1 && rank % 2 == 1)) {
         even = true;
-      } else if (rank % 2 == 0) {
-        if (!left_check) {
-          left_check = true;
-          MPI_Sendrecv(&total, 1, MPI_INT, rank - 1, 0, &left_total, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status);
-        }
-        if (left_total != 0 && total != 0) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
-          even = exchange(flag, left_total, total, rank);
-        }
+      } else if (rank % 2 == 0 && rank != 0) {
+        MPI_Recv(&neighbor_total, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(temp_buffer, neighbor_total, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
+        exchange(flag, neighbor_total, total, rank);
       } else {
-        if (!right_check) {
-          right_check = true;
-          MPI_Sendrecv(&total, 1, MPI_INT, rank + 1, 0, &right_total, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD, &status);
-        }
-        if (right_total != 0 && total != 0) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
-          even = exchange(flag, right_total, total, rank);
+        MPI_Send(&total, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
+        MPI_Send(data, total, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
+        bool tmp;
+        MPI_Recv(&tmp, 1, MPI_C_BOOL, rank + 1, 0, MPI_COMM_WORLD, &status);
+        if (!tmp) {
+          MPI_Recv(data, total, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
         }
       }
-    }
-    if (flag == 1) {
-      now = even & odd;
-      MPI_Allreduce(&now, &result, 1, MPI_C_BOOL, MPI_LAND, MPI_COMM_WORLD);
     }
 
     flag = (flag == 0) ? 1 : 0;
@@ -178,7 +168,6 @@ int main(int argc, char** argv) {
   // if (rank == 0) {
   //   cout << "total time: " << MPI_Wtime() - start_time << endl;
   // }
-
   MPI_Finalize();
 
   return 0;

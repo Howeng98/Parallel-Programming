@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -n 28
-#SBATCH -N 4
+#SBATCH -n 1
+#SBATCH -N 1
 make clean
 make
-srun ./hw1 21 03.in 03.out
+srun ./hw1 50 04.in 04.out
