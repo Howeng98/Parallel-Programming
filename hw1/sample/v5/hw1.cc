@@ -27,9 +27,7 @@ void exchange_right(int neighbor_total, int total) {
     put_buffer[i] = (run_n >= 0 && data[run] < temp_buffer[run_n]) ? temp_buffer[run_n--] : data[run--];
   }
 
-  float *tmp = data;
-  data = put_buffer;
-  put_buffer = tmp;
+  swap(data, put_buffer);
 }
 
 // for left
@@ -40,22 +38,21 @@ void exchange_left(int neighbor_total, int total) {
     put_buffer[i] = (run_n < neighbor_total && data[run] > temp_buffer[run_n]) ? temp_buffer[run_n++] : data[run++];
   }
 
-  float *tmp = data;
-  data = put_buffer;
-  put_buffer = tmp;
+  swap(data, put_buffer);
 }
 
 int main(int argc, char** argv) {
   int rank, size, n, flag;
-  bool result = false;
-  bool now = false;
-  double starttime, endtime;
   int start;
   int total;
   int left_total, right_total;
+  int q, r; // quotient and remainder
   unsigned long long offset;
+  bool result, now;
+  float min, max;
 
   left_total = right_total = 0;
+  result = now = false;
   n = atoll(argv[1]);
 
   MPI_Init(&argc, &argv);
@@ -92,23 +89,25 @@ int main(int argc, char** argv) {
     start = rank;
     left_total = right_total = 1;
   } else {
-    bool judge = (rank < n % size) ? true : false;
-    total = n / size;
-    start = (n / size) * rank;
+    q = n / size;
+    r = n % size;
+    bool judge = (rank < r) ? true : false;
+    total = q;
+    start = q * rank;
     if (judge) {
       // if judge is true, total number plus 1
       total += 1;
       start += rank;
       // determine left total number and right total number
-      left_total = n / size + 1;
-      if (rank != size -1 && rank + 1 < n % size) right_total = n / size + 1;
-      else if (rank != size -1) right_total = n / size;
+      left_total = q + 1;
+      if (rank != size - 1 && rank + 1 < r) right_total = q + 1;
+      else if (rank != size -1) right_total = q;
     } else {
       // determine left total number and right total number
-      right_total = n / size;
-      start += n % size;
-      if (rank != 0 && rank - 1 < n % size) left_total = n / size + 1;
-      else if (rank != 0) left_total = n / size;
+      right_total = q;
+      start += r;
+      if (rank != 0 && rank - 1 < r) left_total = q + 1;
+      else if (rank != 0) left_total = q;
     }
   }
 
@@ -131,22 +130,20 @@ int main(int argc, char** argv) {
 
   // start odd-even sort
   flag = 0;
-  for(int i = 0; i < size+1; i++) {
+  for(int i = 0; i < size + 1; i++) {
     if (flag == 0) { // even sort
-      if (rank % 2 == 0 && rank == size -1) {
-      } else if (rank % 2 == 1) {
+     if (rank % 2 == 1) {
         MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
         exchange_right(left_total, total);
-      } else {
+      } else if (rank != size-1) {
         MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
         exchange_left(right_total, total);
       }
     } else { // odd sort
-      if (rank == 0 || (rank == size - 1 && rank % 2 == 1)) {
-      } else if (rank % 2 == 0) {
+      if (rank % 2 == 0 && rank != 0) {
         MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
         exchange_right(left_total, total);
-      } else {
+      } else if (rank % 2 == 1 && rank != size - 1){
         MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
         exchange_left(right_total, total);
       }
