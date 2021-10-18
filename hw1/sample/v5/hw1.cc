@@ -49,7 +49,6 @@ int main(int argc, char** argv) {
   int q, r; // quotient and remainder
   unsigned long long offset;
   bool result, now;
-  float min, max;
 
   left_total = right_total = 0;
   result = now = false;
