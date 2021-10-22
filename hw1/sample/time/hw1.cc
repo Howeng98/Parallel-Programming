@@ -1,7 +1,7 @@
 #include <iostream>
 #include <boost/sort/spreadsort/float_sort.hpp>
 #include <mpi.h>
-#define CAST_TYPE int
+#define CAST_TYPE unsigned int
 #define DATA_TYPE float
 
 using namespace std;
@@ -10,8 +10,6 @@ using namespace boost::sort::spreadsort;
 float* data;
 float* temp_buffer;
 float* put_buffer;
-float* left_buufer;
-float* right_buffer;
 
 // make float sort in acending order
 struct rightshift{
@@ -22,6 +20,9 @@ inline CAST_TYPE operator()(const DATA_TYPE &x, const unsigned offset) const {
 
 // for right
 void exchange_right(int neighbor_total, int total) {
+  // early terminate
+  if (temp_buffer[neighbor_total-1] <= data[0]) return;
+
   for (int i = total-1, run_n = neighbor_total-1, run = total-1; i >= 0; i--) {
     put_buffer[i] = (run_n >= 0 && data[run] < temp_buffer[run_n]) ? temp_buffer[run_n--] : data[run--];
   }
@@ -31,6 +32,8 @@ void exchange_right(int neighbor_total, int total) {
 
 // for left
 void exchange_left(int neighbor_total, int total) {
+  if (temp_buffer[0] >= data[total-1]) return;
+
   for (int i = 0, run_n = 0, run = 0; i < total; i++) {
     put_buffer[i] = (run_n < neighbor_total && data[run] > temp_buffer[run_n]) ? temp_buffer[run_n++] : data[run++];
   }
@@ -127,36 +130,21 @@ int main(int argc, char** argv) {
   // start odd-even sort
   flag = 0;
   for(int i = 0; i < size + 1; i++) {
-    if (flag == 0) {
-      // even sort
-     if (rank % 2 == 1) { // process 在右邊
-        // 先確認兩邊 process 資料是不是需要更新
-        MPI_Sendrecv(&data[0], 1, MPI_FLOAT, rank - 1, 0, &temp_buffer[0], 1, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
-        if (data[0] < temp_buffer[0]) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
-          exchange_right(left_total, total);
-        }
-      } else if (rank != size-1) { // process 在左邊除了最後一個是偶數的情況
-        MPI_Sendrecv(&data[total-1], 1, MPI_FLOAT, rank + 1, 0, &temp_buffer[0], 1, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
-        if (data[total-1] > temp_buffer[0]) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
-          exchange_left(right_total, total);
-        }
+    if (flag == 0) { // even sort
+     if (rank % 2 == 1) {
+        MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
+        exchange_right(left_total, total);
+      } else if (rank != size-1) {
+        MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
+        exchange_left(right_total, total);
       }
-    } else {
-      // odd sort
+    } else { // odd sort
       if (rank % 2 == 0 && rank != 0) {
-        MPI_Sendrecv(&data[0], 1, MPI_FLOAT, rank - 1, 0, &temp_buffer[0], 1, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
-        if (data[0] < temp_buffer[0]) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
-          exchange_right(left_total, total);
-        }
+        MPI_Sendrecv(data, total, MPI_FLOAT, rank - 1, 0, temp_buffer, left_total, MPI_FLOAT, rank - 1, 0, mpi_comm, &status);
+        exchange_right(left_total, total);
       } else if (rank % 2 == 1 && rank != size - 1){
-        MPI_Sendrecv(&data[total-1], 1, MPI_FLOAT, rank + 1, 0, &temp_buffer[0], 1, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
-        if (data[total-1] > temp_buffer[0]) {
-          MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
-          exchange_left(right_total, total);
-        }
+        MPI_Sendrecv(data, total, MPI_FLOAT, rank + 1, 0, temp_buffer, right_total, MPI_FLOAT, rank + 1, 0, mpi_comm, &status);
+        exchange_left(right_total, total);
       }
     }
 
