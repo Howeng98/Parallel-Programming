@@ -39,18 +39,15 @@ void exchange_left(int neighbor_total, int total) {
 }
 
 int main(int argc, char** argv) {
-  int rank, size, n, flag;
-  int start;
-  int total;
+  int rank, size, n, run_time;
+  int start, total;
   int left_total, right_total;
   int q, r; // quotient and remainder
   unsigned long long offset;
-  bool result, now;
+  bool flag;
 
-  left_total = right_total = 0;
-  result = now = false;
+  flag = true;
   n = atoll(argv[1]);
-
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -58,9 +55,6 @@ int main(int argc, char** argv) {
   MPI_File f;
   MPI_Group old_group, new_group;
   MPI_Comm mpi_comm = MPI_COMM_WORLD;
-
-  // start time
-  //double start_time = MPI_Wtime();
 
   // assign number to every process
   // if the process num larger than n, remove necessary process
@@ -108,9 +102,9 @@ int main(int argc, char** argv) {
   }
 
   offset = start * sizeof(float);
-  data = (float*)malloc(sizeof(float)*(n / size + size));
-  temp_buffer = (float*)malloc(sizeof(float)*(n / size + size));
-  put_buffer = (float*)malloc(sizeof(float)*(n / size + size));
+  data = (float*)malloc(sizeof(float)*(n / size + 5));
+  temp_buffer = (float*)malloc(sizeof(float)*(n / size + 5));
+  put_buffer = (float*)malloc(sizeof(float)*(n / size + 5));
 
   // read input
   int check = MPI_File_open(mpi_comm, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, &f);
@@ -125,9 +119,9 @@ int main(int argc, char** argv) {
   float_sort(data, data+total, rightshift());
 
   // start odd-even sort
-  flag = 0;
-  for(int i = 0; i < size + 1; i++) {
-    if (flag == 0) {
+  run_time = (n / size == 0) ? size : size + 1;
+  for(int i = 0; i < run_time; i++) {
+    if (flag) {
       // even sort
      if (rank % 2 == 1) { // process 在右邊
         // 先確認兩邊 process 資料是不是需要更新
@@ -160,7 +154,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    flag = (flag == 0) ? 1 : 0;
+    flag = !flag;
   }
 
   // write back 
@@ -171,12 +165,6 @@ int main(int argc, char** argv) {
   }
   MPI_File_write_at(f, offset, data, total, MPI_FLOAT, MPI_STATUS_IGNORE);
   MPI_File_close(&f);
-
-  // calculate total time
-  // if (rank == 0) {
-  //   cout << "total time: " << MPI_Wtime() - start_time << endl;
-  // }
-
   MPI_Finalize();
 
   return 0;
