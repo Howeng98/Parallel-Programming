@@ -21,6 +21,11 @@ class CalculateTime {
     // write time to a file
     void print_result();
 
+    // get time
+    double get_cup_time() {return this->CPU_time;}
+    double get_comm_time() {return this->COMM_time;}
+    double get_io_time() {return this->IO_time;}
+
 
   private:
     double IO_time;
