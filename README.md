@@ -10,3 +10,8 @@ Lab1 needs you to calculate how many pixels in a circle in order to make you get
 
 ## HW1
 HW1 needs you to implement odd-even sort with MPI.
+
+## Lab2
+There are three labs this time including Pthread, OpenMP and hybrid of MPI and OpenMP.
+
+These three labs require you to do the same problem as the lab1 to calculate how many pixels in a circle.
