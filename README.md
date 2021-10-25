@@ -14,6 +14,5 @@ In time template directory, I provide some tools for you to calculate IO, CPU an
 - scoreboard rank: 5/49
 
 ## Lab2
-There are three labs this time including Pthread, OpenMP and hybrid of MPI and OpenMP.
-
-These three labs require you to do the same problem as the lab1 to calculate how many pixels in a circle.
+- There are three labs this time including Pthread, OpenMP and hybrid of MPI and OpenMP.
+- These three labs require you to do the same problem as the lab1 to calculate how many pixels in a circle.
