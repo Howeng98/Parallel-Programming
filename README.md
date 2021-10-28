@@ -11,8 +11,11 @@ I provide some template tools for you to calculate IO, CPU and Compute time. Bes
 
 ## HW1
 - HW1 needs you to implement odd-even sort with MPI.
-- scoreboard rank: 5/49
+- scoreboard rank: 4/49
 
 ## Lab2
 - There are three labs this time including Pthread, OpenMP and hybrid of MPI and OpenMP.
 - These three labs require you to do the same problem as the lab1 to calculate how many pixels in a circle.
+
+## HW2
+- HW2 needs you implement mandelbrot set with Pthread and hybrid of MPI and OpenMP.
