@@ -21,7 +21,7 @@ inline CAST_TYPE operator()(const DATA_TYPE &x, const unsigned offset) const {
 };
 
 // for right
-void exchange_right(int neighbor_total, int total) {
+inline void exchange_right(int neighbor_total, int total) {
   for (int i = total-1, run_n = neighbor_total-1, run = total-1; i >= 0; i--) {
     put_buffer[i] = (run_n >= 0 && data[run] < temp_buffer[run_n]) ? temp_buffer[run_n--] : data[run--];
   }
@@ -30,7 +30,7 @@ void exchange_right(int neighbor_total, int total) {
 }
 
 // for left
-void exchange_left(int neighbor_total, int total) {
+inline void exchange_left(int neighbor_total, int total) {
   for (int i = 0, run_n = 0, run = 0; i < total; i++) {
     put_buffer[i] = (run_n < neighbor_total && data[run] > temp_buffer[run_n]) ? temp_buffer[run_n++] : data[run++];
   }

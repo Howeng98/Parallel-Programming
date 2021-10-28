@@ -17,7 +17,7 @@ typedef struct _data {
 	pthread_mutex_t lock;
 } data;
 
-void* calculate_pixel(void* Input) {
+inline void* calculate_pixel(void* Input) {
 	data* input = (data*)Input;
 
 	unsigned long long rank;
