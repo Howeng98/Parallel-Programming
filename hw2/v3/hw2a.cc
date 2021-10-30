@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <emmintrin.h>
 
 using namespace std;
 
@@ -45,6 +46,12 @@ struct threadpool_t {
     double right;
     double upper;
     double lower;
+};
+
+// Union structure to save space
+union data_see {
+  __m128d see;
+  double num[2];
 };
 
 void mandelbrot_set(data* arg);
@@ -130,29 +137,71 @@ inline void* threadpool_thread(void* threadpool) {
 }
 
 inline void mandelbrot_set(data* arg) {
-  int repeats = 0;
-  double x = 0;
-  double y = 0;
-  double length_squred = 0;
-  double temp;
-  double x0;
-  double y0;
+  int repeats_left = 0;
+  int repeats_right = 0;
+  int now = 0;
+  int left_run, right_run;
+  bool left, right;
+  double constraint = 4;
+  double two = 2;
+  data_see length_squre_see, x_see, y_see, x0_see, y0_see;
+  __m128d two_see = _mm_set_pd(two, two);
+  __m128d temp;
+  
+  left = false;
+  left_run = arg->now;
+  x_see.num[0] = 0;
+  y_see.num[0] = 0;
+  length_squre_see.num[0] = 0;
+  x0_see.num[0] = ((arg->now) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
+  y0_see.num[0] = ((arg->now) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
 
-  for (int i = 0; i < arg->chunk_size; i++) {
-    x0 = ((arg->now + i) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
-    y0 = ((arg->now + i) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
-    x = 0;
-    y = 0;
-    length_squred = 0;
-    while (repeats < arg->iters && length_squred < 4) {
-      temp = x * x - y * y + x0;
-      y = 2 * x * y + y0;
-      x = temp;
-      length_squred = x * x + y * y;
-      ++repeats;
+  if (arg->chunk_size <= 1) {
+    right = true;
+    now = 1;
+  } else {
+    right = false;
+    right_run = arg->now + 1;
+    x_see.num[1] = 0;
+    y_see.num[1] = 0;
+    length_squre_see.num[1] = 0;
+    x0_see.num[1] = ((arg->now + 1) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
+    y0_see.num[1] = ((arg->now + 1) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
+    now = 2;
+  }
+
+  while (!left || !right || now < arg->chunk_size) {
+    // sse instructions
+    temp = _mm_add_pd(_mm_sub_pd(_mm_mul_pd(x_see.see, x_see.see), _mm_mul_pd(y_see.see, y_see.see)), x0_see.see);
+    y_see.see = _mm_add_pd(_mm_mul_pd(two_see, _mm_mul_pd(x_see.see, y_see.see)), y0_see.see);
+    x_see.see = temp;
+    length_squre_see.see = _mm_add_pd(_mm_mul_pd(x_see.see, x_see.see), _mm_mul_pd(y_see.see, y_see.see));
+    ++repeats_left;
+    ++repeats_right;
+
+    if ((length_squre_see.num[0] >= constraint || repeats_left >= arg->iters) && !left) {
+      image[left_run] = repeats_left;
+      repeats_left = 0;
+      left_run = arg->now + now;
+      x_see.num[0] = 0;
+      y_see.num[0] = 0;
+      length_squre_see.num[0] = 0;
+      x0_see.num[0] = ((arg->now + now) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
+      y0_see.num[0] = ((arg->now + now) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
+      now++;
+      left = (now > arg->chunk_size) ? true : false;
+    } if ((length_squre_see.num[1] >= constraint || repeats_right >= arg->iters) && !right) {
+      image[right_run] = repeats_right;
+      repeats_right = 0;
+      right_run = arg->now + now;
+      x_see.num[1] = 0;
+      y_see.num[1] = 0;
+      length_squre_see.num[1] = 0;
+      x0_see.num[1] = ((arg->now + now) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
+      y0_see.num[1] = ((arg->now + now) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
+      now++;
+      right = (now > arg->chunk_size) ? true : false;
     }
-    image[arg->now+i] = repeats;
-    repeats = 0;
   }
 }
 
