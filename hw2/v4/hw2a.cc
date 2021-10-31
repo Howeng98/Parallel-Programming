@@ -16,47 +16,48 @@ using namespace std;
 // 參數
 struct data {
   int iters;
-  int now;
   int height;
   int width;
-  int chunk_size;
   double left;
   double right;
   double upper;
   double lower;
+  double x0_add;
+  double y0_add;
+  double x0;
+  double y0;
+
+  // changed data
+  int row_now;
+  int start;
 };
 
 // thread pool, 紀錄 thread 數量跟現在有哪些 task
 struct threadpool_t {
-    pthread_mutex_t lock;
-    pthread_cond_t notify;
-    pthread_t *threads;
-    void (*function)(void*);
-    bool shutdown;
-    int thread_count;
-    int work_size;
-    int work_now;
-    int chunk_size;
+  pthread_mutex_t lock;
+  pthread_cond_t notify;
+  void (*function)(void*);
+  bool shutdown;
+  int thread_count;
+  int row_now;
 
-    // data
-    int iters;
-    int height;
-    int width;
-    double left;
-    double right;
-    double upper;
-    double lower;
+  // data
+  int iters;
+  int height;
+  int width;
+  double left;
+  double right;
+  double upper;
+  double lower;
+  double x0_add;
+  double y0_add;
+  double x0;
+  double y0;
 };
 
-// Union structure to save space
-union data_see {
-  __m128d see;
-  double num[2];
-};
-
-void mandelbrot_set(data* arg);
+inline void mandelbrot_set(void* arg);
 inline void* threadpool_thread(void* threadpool);
-void write_png(const char* filename, int iters, int width, int height, const int* buffer);
+inline void write_png(const char* filename, int iters, int width, int height, const int* buffer);
 
 // img
 int* image;
@@ -81,13 +82,11 @@ int main(int argc, char** argv) {
   assert(image);
 
   threadpool_t pool;
-  pool.work_size = width * height;
-  pool.work_now = 0;
   pool.thread_count = ncpus;
-  pool.threads = (pthread_t *)malloc(sizeof(pthread_t) * pool.thread_count);
   pool.shutdown = false;
   pthread_mutex_init(&(pool.lock), NULL);
   pthread_cond_init(&(pool.notify), NULL);
+  pool.row_now = 0;
   pool.iters = iters;
   pool.left = left;
   pool.right = right;
@@ -95,8 +94,11 @@ int main(int argc, char** argv) {
   pool.upper = upper;
   pool.width = width;
   pool.height = height;
-  pool.chunk_size = 500;
-  
+  pool.x0_add = (right - left) / (double)width;
+  pool.y0_add = (upper - lower) / (double)height;
+  pool.x0 = left;
+  pool.y0 = lower;
+  pool.function = &mandelbrot_set;
 
   for (int i = 0; i < ncpus; i++) {
     pthread_create(&threads[i], NULL, threadpool_thread, &pool);
@@ -107,6 +109,7 @@ int main(int argc, char** argv) {
   }
 
   write_png(filename, iters, width, height, image);
+  free(image);
   pthread_exit(NULL);
 }
 
@@ -121,120 +124,126 @@ inline void* threadpool_thread(void* threadpool) {
   arg->iters = pool->iters;
   arg->left = pool->left;
   arg->right = pool->right;
+  arg->x0_add = pool->x0_add;
+  arg->y0_add = pool->y0_add;
+  arg->x0 = pool->x0;
+  arg->y0 = pool->y0;
 
   while (!pool->shutdown) {
     pthread_mutex_lock(&(pool->lock));
-    arg->now = pool->work_now;
-    pool->work_now = (pool->work_now + pool->chunk_size > pool->work_size) ? pool->work_size : pool->work_now + pool->chunk_size;
-
-    if (pool->work_now == pool->work_size) pool->shutdown = true;
+    arg->row_now = pool->row_now;
+    arg->y0 = pool->y0;
+    pool->row_now += 1;
+    pool->y0 = pool->lower + pool->row_now * pool->y0_add;
+    arg->x0 = arg->left;
+    if (pool->row_now == pool->height) pool->shutdown = true;
+    arg->start = arg->row_now * arg->width;
     pthread_mutex_unlock(&(pool->lock));
-    arg->chunk_size = pool->work_now - arg->now;
-    mandelbrot_set(arg);
+    pool->function(arg);
   }
 
   pthread_exit(NULL);
 }
 
-inline void mandelbrot_set(data* arg) {
-  int repeats_left = 0;
-  int repeats_right = 0;
-  int now = 0;
-  int left_run, right_run;
-  bool left, right;
-  double constraint = 4;
-  double two = 2;
-  data_see length_square_see, x_see, y_see, x0_see, y0_see;
-  __m128d two_see = _mm_set_pd(two, two);
+inline void mandelbrot_set(void* Arg) {
+  data* arg = (data*)Arg;
+  bool done[2];
+  int repeats[2];
+  int run_now[2];
+  int record_now;
+  double x0;
+  double y0;
+  double x0_add;
+  double tmp;
+  const double constraint = 4;
+  const double two = 2;
+
+  __m128d two_see;
+  __m128d length_square_see;
+  __m128d x_see;
+  __m128d y_see;
+  __m128d x0_see;
+  __m128d y0_see;
   __m128d temp;
+
+  x0_add = arg->x0_add;
+  x0 = arg->x0;
+  y0 = arg->y0;
+  done[0] = done[1]  = false;
+  run_now[0] = arg->start;
+  run_now[1] = arg->start + 1;
+  repeats[0] = repeats[1] = 0;
+  record_now = 2;
   
-  left = false;
-  left_run = arg->now;
-  x_see.num[0] = 0;
-  y_see.num[0] = 0;
-  length_square_see.num[0] = 0;
-  x0_see.num[0] = ((arg->now) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
-  y0_see.num[0] = ((arg->now) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
+  two_see[0] = two_see[1] = two;
+  x0_see[0] = x0;
+  x0_see[1] = x0 + x0_add;
+  x_see[0] = x_see[1] = 0;
+  y0_see[0] = y0_see[1] = y0;
+  y_see[0] = y_see[1] = 0;
 
-  if (arg->chunk_size <= 1) {
-    right = true;
-    now = 1;
-  } else {
-    right = false;
-    right_run = arg->now + 1;
-    x_see.num[1] = 0;
-    y_see.num[1] = 0;
-    length_square_see.num[1] = 0;
-    x0_see.num[1] = ((arg->now + 1) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
-    y0_see.num[1] = ((arg->now + 1) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
-    now = 2;
-  }
+  while (record_now < arg->width) {
+    // see instructions
+    temp = _mm_add_pd(_mm_sub_pd(_mm_mul_pd(x_see, x_see), _mm_mul_pd(y_see, y_see)), x0_see);
+    y_see = _mm_add_pd(_mm_mul_pd(two_see, _mm_mul_pd(x_see, y_see)), y0_see);
+    x_see = temp;
+    length_square_see = _mm_add_pd(_mm_mul_pd(x_see, x_see), _mm_mul_pd(y_see, y_see));
+    ++repeats[0];
+    ++repeats[1];
 
-  while (now < arg->chunk_size) {
-    // sse instructions
-    temp = _mm_add_pd(_mm_sub_pd(_mm_mul_pd(x_see.see, x_see.see), _mm_mul_pd(y_see.see, y_see.see)), x0_see.see);
-    y_see.see = _mm_add_pd(_mm_mul_pd(two_see, _mm_mul_pd(x_see.see, y_see.see)), y0_see.see);
-    x_see.see = temp;
-    length_square_see.see = _mm_add_pd(_mm_mul_pd(x_see.see, x_see.see), _mm_mul_pd(y_see.see, y_see.see));
-    ++repeats_left;
-    ++repeats_right;
-
-    if ((length_square_see.num[0] >= constraint || repeats_left >= arg->iters) && !left) {
-      image[left_run] = repeats_left;
-      repeats_left = 0;
-      left_run = arg->now + now;
-      x_see.num[0] = 0;
-      y_see.num[0] = 0;
-      length_square_see.num[0] = 0;
-      x0_see.num[0] = ((arg->now + now) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
-      y0_see.num[0] = ((arg->now + now) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
-      now++;
-      left = (now > arg->chunk_size) ? true : false;
-    } if ((length_square_see.num[1] >= constraint || repeats_right >= arg->iters) && !right) {
-      image[right_run] = repeats_right;
-      repeats_right = 0;
-      right_run = arg->now + now;
-      x_see.num[1] = 0;
-      y_see.num[1] = 0;
-      length_square_see.num[1] = 0;
-      x0_see.num[1] = ((arg->now + now) % arg->width) * ((arg->right - arg->left) / arg->width) + arg->left;
-      y0_see.num[1] = ((arg->now + now) / arg->width) * ((arg->upper - arg->lower) / arg->height) + arg->lower;
-      now++;
-      right = (now > arg->chunk_size) ? true : false;
+    if (length_square_see[0] >= constraint || repeats[0] >= arg->iters) {
+      image[run_now[0]] = repeats[0];
+      repeats[0] = 0;
+      run_now[0] = arg->start + record_now;
+      x_see[0] = 0;
+      y_see[0] = 0;
+      length_square_see[0] = 0;
+      tmp = x0 + x0_add * record_now;
+      x0_see[0] = tmp;
+      done[0] = (record_now > arg->width) ? true : false;
+      record_now += 1;
+    } if (length_square_see[1] >= constraint || repeats[1] >= arg->iters) {
+      image[run_now[1]] = repeats[1];
+      repeats[1] = 0;
+      run_now[1] = arg->start + record_now;
+      x_see[1] = 0;
+      y_see[1] = 0;
+      length_square_see[1] = 0;
+      tmp = x0 + x0_add * record_now;
+      x0_see[1] = tmp;
+      done[1] = (record_now > arg->width) ? true : false;
+      record_now += 1;
     }
   }
-  if (!left) {
-    double x0 = x0_see.num[0];
-    double y0 = y0_see.num[0];
-    double x = x_see.num[0];
-    double y = y_see.num[0];
-    double tmp;
-    double length_square = length_square_see.num[0];
 
-    while (repeats_left < arg->iters && length_square < 4) {
+  if (!done[0]) {
+    double x = x_see[0];
+    double y = y_see[0];
+    double length_square = length_square_see[0];
+    x0 = x0_see[0];
+
+    while (repeats[0] < arg->iters && length_square < constraint) {
       tmp = x * x - y * y + x0;
       y = 2 * x * y + y0;
       x = tmp;
       length_square = x * x + y * y;
-      ++repeats_left;
+      ++repeats[0];
     }
-    image[left_run] = repeats_left;
-  } if (!right) {
-    double x0 = x0_see.num[1];
-    double y0 = y0_see.num[1];
-    double x = x_see.num[1];
-    double y = y_see.num[1];
-    double tmp;
-    double length_square = length_square_see.num[1];
+    image[run_now[0]] = repeats[0];
+  } if (!done[1]) {
+    double x = x_see[1];
+    double y = y_see[1];
+    double length_square = length_square_see[1];
+    x0 = x0_see[1];
 
-    while (repeats_right < arg->iters && length_square < 4) {
+    while (repeats[1] < arg->iters && length_square < constraint) {
       tmp = x * x - y * y + x0;
       y = 2 * x * y + y0;
       x = tmp;
       length_square = x * x + y * y;
-      ++repeats_right;
+      ++repeats[1];
     }
-    image[right_run] = repeats_right;
+    image[run_now[1]] = repeats[1];
   }
 }
 
