@@ -15,6 +15,7 @@ using namespace std;
 
 // 參數
 struct data {
+  void (*function)(void*);
   int iters;
   int height;
   int width;
@@ -35,7 +36,6 @@ struct data {
 // thread pool, 紀錄 thread 數量跟現在有哪些 task
 struct threadpool_t {
   pthread_mutex_t lock;
-  pthread_cond_t notify;
   void (*function)(void*);
   bool shutdown;
   int thread_count;
@@ -85,7 +85,6 @@ int main(int argc, char** argv) {
   pool.thread_count = ncpus;
   pool.shutdown = false;
   pthread_mutex_init(&(pool.lock), NULL);
-  pthread_cond_init(&(pool.notify), NULL);
   pool.row_now = 0;
   pool.iters = iters;
   pool.left = left;
@@ -98,7 +97,6 @@ int main(int argc, char** argv) {
   pool.y0_add = (upper - lower) / (double)height;
   pool.x0 = left;
   pool.y0 = lower;
-  pool.function = &mandelbrot_set;
 
   for (int i = 0; i < ncpus; i++) {
     pthread_create(&threads[i], NULL, threadpool_thread, &pool);
@@ -110,13 +108,16 @@ int main(int argc, char** argv) {
 
   write_png(filename, iters, width, height, image);
   free(image);
+  pthread_mutex_destroy(&pool.lock);
   pthread_exit(NULL);
 }
 
 inline void* threadpool_thread(void* threadpool) {
   threadpool_t *pool = (threadpool_t*)threadpool;
   data *arg;
+
   arg = new data;
+  arg->function = mandelbrot_set;
   arg->height = pool->height;
   arg->width = pool->width;
   arg->upper = pool->upper;
@@ -127,19 +128,16 @@ inline void* threadpool_thread(void* threadpool) {
   arg->x0_add = pool->x0_add;
   arg->y0_add = pool->y0_add;
   arg->x0 = pool->x0;
-  arg->y0 = pool->y0;
 
-  while (!pool->shutdown) {
+  while (true) {
     pthread_mutex_lock(&(pool->lock));
     arg->row_now = pool->row_now;
-    arg->y0 = pool->y0;
     pool->row_now += 1;
-    pool->y0 = pool->lower + pool->row_now * pool->y0_add;
-    arg->x0 = arg->left;
-    if (pool->row_now == pool->height) pool->shutdown = true;
-    arg->start = arg->row_now * arg->width;
     pthread_mutex_unlock(&(pool->lock));
-    pool->function(arg);
+    arg->y0 = arg->lower + arg->row_now * arg->y0_add;
+    arg->start = arg->row_now * arg->width;
+    if (arg->row_now < arg->height) arg->function(arg);
+    else break;
   }
 
   pthread_exit(NULL);
@@ -155,8 +153,8 @@ inline void mandelbrot_set(void* Arg) {
   double y0;
   double x0_add;
   double tmp;
-  const double constraint = 4;
-  const double two = 2;
+  double constraint = 4;
+  double two = 2;
 
   __m128d two_see;
   __m128d length_square_see;
@@ -175,6 +173,7 @@ inline void mandelbrot_set(void* Arg) {
   repeats[0] = repeats[1] = 0;
   record_now = 2;
   
+  // sse vector
   two_see[0] = two_see[1] = two;
   x0_see[0] = x0;
   x0_see[1] = x0 + x0_add;
@@ -182,7 +181,7 @@ inline void mandelbrot_set(void* Arg) {
   y0_see[0] = y0_see[1] = y0;
   y_see[0] = y_see[1] = 0;
 
-  while (record_now < arg->width) {
+  while (record_now <= arg->width) {
     // see instructions
     temp = _mm_add_pd(_mm_sub_pd(_mm_mul_pd(x_see, x_see), _mm_mul_pd(y_see, y_see)), x0_see);
     y_see = _mm_add_pd(_mm_mul_pd(two_see, _mm_mul_pd(x_see, y_see)), y0_see);
@@ -200,7 +199,7 @@ inline void mandelbrot_set(void* Arg) {
       length_square_see[0] = 0;
       tmp = x0 + x0_add * record_now;
       x0_see[0] = tmp;
-      done[0] = (record_now > arg->width) ? true : false;
+      done[0] = (record_now >= arg->width) ? true : false;
       record_now += 1;
     } if (length_square_see[1] >= constraint || repeats[1] >= arg->iters) {
       image[run_now[1]] = repeats[1];
@@ -211,7 +210,7 @@ inline void mandelbrot_set(void* Arg) {
       length_square_see[1] = 0;
       tmp = x0 + x0_add * record_now;
       x0_see[1] = tmp;
-      done[1] = (record_now > arg->width) ? true : false;
+      done[1] = (record_now >= arg->width) ? true : false;
       record_now += 1;
     }
   }
