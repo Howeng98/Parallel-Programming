@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <emmintrin.h>
+#include <math.h>
 
 using namespace std;
 
@@ -79,8 +80,8 @@ int main(int argc, char** argv) {
   for (int i = 0; i < ncpus; i++) {
     pthread_join(threads[i], NULL);
   }
-
-  //write_png(filename, iters, width, height, image);
+  
+  write_png(filename, iters, width, height, image);
   free(image);
   pthread_mutex_destroy(&pool.lock);
   pthread_exit(NULL);
@@ -104,14 +105,20 @@ inline void* threadpool_thread(void* threadpool) {
   double tmp;
   double constraint = 4;
   double two = 2;
+  double x_square;
+  double y_square;
 
-  __m128d two_see = _mm_set_pd(two, two);
+  __m128d two_see;
   __m128d length_square_see;
   __m128d x_see;
   __m128d y_see;
   __m128d x0_see;
   __m128d y0_see;
   __m128d temp;
+  __m128d x_square_see;
+  __m128d y_square_see;
+
+  two_see[0] = two_see[1] = 2;
 
   while (true) {
     pthread_mutex_lock(&(pool->lock));
@@ -130,6 +137,8 @@ inline void* threadpool_thread(void* threadpool) {
     x_see[0] = x_see[1] = 0;
     y0_see[0] = y0_see[1] = y0;
     y_see[0] = y_see[1] = 0;
+    x_square_see[0] = x_square_see[1] = 0;
+    y_square_see[0] = y_square_see[1] = 0;
 
     done[0] = done[1]  = false;
     start = row_now * pool->width;
@@ -140,10 +149,11 @@ inline void* threadpool_thread(void* threadpool) {
 
     while (record_now <= pool->width) {
       // see instructions
-      temp = _mm_add_pd(_mm_sub_pd(_mm_mul_pd(x_see, x_see), _mm_mul_pd(y_see, y_see)), x0_see);
       y_see = _mm_add_pd(_mm_mul_pd(two_see, _mm_mul_pd(x_see, y_see)), y0_see);
-      x_see = temp;
-      length_square_see = _mm_add_pd(_mm_mul_pd(x_see, x_see), _mm_mul_pd(y_see, y_see));
+      x_see = _mm_add_pd(_mm_sub_pd(x_square_see, y_square_see), x0_see);
+      x_square_see = _mm_mul_pd(x_see, x_see);
+      y_square_see = _mm_mul_pd(y_see, y_see);
+      length_square_see = _mm_add_pd(x_square_see, y_square_see);
       ++repeats[0];
       ++repeats[1];
 
@@ -153,9 +163,10 @@ inline void* threadpool_thread(void* threadpool) {
         run_now[0] = start + record_now;
         x_see[0] = 0;
         y_see[0] = 0;
+        x_square_see[0] = 0;
+        y_square_see[0] = 0;
         length_square_see[0] = 0;
-        tmp = x0 + pool->x0_add * record_now;
-        x0_see[0] = tmp;
+        x0_see[0] = x0 + pool->x0_add * record_now;
         done[0] = (record_now >= pool->width) ? true : false;
         record_now += 1;
       } if (length_square_see[1] >= constraint || repeats[1] >= iters) {
@@ -164,9 +175,10 @@ inline void* threadpool_thread(void* threadpool) {
         run_now[1] = start + record_now;
         x_see[1] = 0;
         y_see[1] = 0;
+        x_square_see[1] = 0;
+        y_square_see[1] = 0;
         length_square_see[1] = 0;
-        tmp = x0 + pool->x0_add * record_now;
-        x0_see[1] = tmp;
+        x0_see[1] = x0 + pool->x0_add * record_now;
         done[1] = (record_now >= pool->width) ? true : false;
         record_now += 1;
       }
@@ -174,28 +186,34 @@ inline void* threadpool_thread(void* threadpool) {
     if (!done[0]) {
       x = x_see[0];
       y = y_see[0];
+      x_square = x_square_see[0];
+      y_square = y_square_see[0];
       length_square = length_square_see[0];
       x0 = x0_see[0];
 
       while (repeats[0] < iters && length_square < constraint) {
-        tmp = x * x - y * y + x0;
         y = 2 * x * y + y0;
-        x = tmp;
-        length_square = x * x + y * y;
+        x = x_square - y_square + x0;
+        x_square = x * x;
+        y_square = y * y;
+        length_square = x_square + y_square;
         ++repeats[0];
       }
       image[run_now[0]] = repeats[0];
     } if (!done[1]) {
       x = x_see[1];
       y = y_see[1];
+      x_square = x_square_see[1];
+      y_square = y_square_see[1];
       length_square = length_square_see[1];
       x0 = x0_see[1];
 
       while (repeats[1] < iters && length_square < constraint) {
-        tmp = x * x - y * y + x0;
         y = 2 * x * y + y0;
-        x = tmp;
-        length_square = x * x + y * y;
+        x = x_square - y_square + x0;
+        x_square = x * x;
+        y_square = y * y;
+        length_square = x_square + y_square;
         ++repeats[1];
       }
       image[run_now[1]] = repeats[1];
