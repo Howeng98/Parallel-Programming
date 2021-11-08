@@ -102,7 +102,6 @@ inline void* threadpool_thread(void* threadpool) {
   double x0;
   double y0;
   double length_square;
-  double tmp;
   double constraint = 4;
   double two = 2;
   double x_square;
@@ -114,7 +113,6 @@ inline void* threadpool_thread(void* threadpool) {
   __m128d y_see;
   __m128d x0_see;
   __m128d y0_see;
-  __m128d temp;
   __m128d x_square_see;
   __m128d y_square_see;
 

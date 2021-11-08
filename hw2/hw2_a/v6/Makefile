@@ -1,7 +1,7 @@
 CC = clang
 CXX = clang++
 LDLIBS = -lpng
-CFLAGS = -lm -O2 -ffast-math -march=native
+CFLAGS = -lm -O3 -ffast-math -msse2
 hw2a: CFLAGS += -pthread
 hw2b: CC = mpicc
 hw2b: CXX = mpicxx
