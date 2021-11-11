@@ -6,28 +6,25 @@
 #include <png.h>
 #include <iostream>
 #include <mpi.h>
+#include <pthread.h>
 #include <string.h>
 #include <omp.h>
 #include <math.h>
 #include <emmintrin.h>
-#include <pthread.h>
 
 using namespace std;
 
 int* image;
-int* total_image;
-
 struct _data {
   pthread_mutex_t lock;
-  int size;
-  int rank;
   int width;
   int height;
   int proc_now;
+  int proc_num;
 };
 
 inline void write_png(const char* filename, int iters, int width, int height, const int* buffer);
-inline void* receive_png(void* data);
+inline void* receive_png(void* Data);
 
 int main(int argc, char** argv) {
   // get threads
@@ -52,23 +49,15 @@ int main(int argc, char** argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   MPI_Status status;
-  MPI_Request request;
 
   // assign task to every process
-  int begin;
-  int end;
-  int total_task;
-  int flag = (rank < height % size) ? 1 : 0;
-  int add = (flag == 1) ? rank : height % size;
-  total_task = height / size + flag;
-  begin = (height / size) * rank + add;
-  end = begin + total_task;
-  image = (int*)malloc(total_task * width * sizeof(int));
+  image = (int*)malloc(height * width * sizeof(int));
   assert(image);
+  memset(image, 0, width * height * sizeof(int));
 
 
   #pragma omp parallel for schedule(dynamic) num_threads(ncpus)
-    for (int i = begin; i < end; i++) {
+    for (int i = rank; i < height; i+=size) {
       // mandelbrot set
       bool done[2];
       int repeats[2];
@@ -107,7 +96,7 @@ int main(int argc, char** argv) {
       y_square_see[0] = y_square_see[1] = 0;
       // other variable initialize
       done[0] = done[1] = false;
-      start = (i - begin) * width;
+      start = i * width;
       run_now[0] = start;
       run_now[1] = start + 1;
       repeats[0] = repeats[1] = 0;
@@ -189,58 +178,55 @@ int main(int argc, char** argv) {
     }
 
   if (rank == 0) {
-    total_image = (int*)malloc(height * width * sizeof(int));
     _data data;
-    data.size = size;
-    data.rank = 0;
-    data.proc_now = 1;
-    data.width = width;
     data.height = height;
+    data.width = width;
+    data.proc_now = 1;
+    data.proc_num = size;
     pthread_mutex_init(&(data.lock), NULL);
-    
     for (int i = 0; i < ncpus; i++) {
       pthread_create(&threads[i], NULL, receive_png, &data);
     }
-
     for (int i = 0; i < ncpus; i++) {
       pthread_join(threads[i], NULL);
     }
-
-    for (int i = 0; i < total_task * width; i++) {
-      total_image[i] = image[i];
-    }
-    write_png(filename, iters, width, height, total_image);
-    free(image);
-    free(total_image);
-    pthread_mutex_destroy(&data.lock);
+    pthread_mutex_destroy(&(data.lock));
   } else {
-    MPI_Send(&total_task, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    MPI_Send(&begin, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    MPI_Send(image, total_task * width, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    free(image);
+    MPI_Request req;
+    MPI_Isend(image, width * height, MPI_INT, 0, 0, MPI_COMM_WORLD, &req);
+    MPI_Wait(&req, &status);
   }
+  
   MPI_Finalize();
   return 0;
 }
 
 inline void* receive_png(void* Data) {
   _data *data = (_data*)Data;
-  int neighbor_total;
-  int neighbor_start;
-  int proc;
   MPI_Status status;
+  int total = data->height * data->width;
+  int *tmp = (int*)malloc(total * sizeof(int));
+  int proc_now = 1;
+  int run;
+  MPI_Request req;
 
   while (true) {
     pthread_mutex_lock(&(data->lock));
-    proc = data->proc_now;
+    proc_now = data->proc_now;
     data->proc_now += 1;
     pthread_mutex_unlock(&(data->lock));
-    if (proc >= data->size) break;
+    if (proc_now >= data->proc_num) break;
 
-    MPI_Recv(&neighbor_total, 1, MPI_INT, proc, 0, MPI_COMM_WORLD, &status);
-    MPI_Recv(&neighbor_start, 1, MPI_INT, proc, 0, MPI_COMM_WORLD, &status);
-    MPI_Recv(&total_image[neighbor_start * data->width], neighbor_total * data->width, MPI_INT, proc, 0, MPI_COMM_WORLD, &status);
+    MPI_Irecv(tmp, total, MPI_INT, proc_now, 0, MPI_COMM_WORLD, &req);
+    MPI_Wait(&req, &status);
+    for (int i = proc_now; i < data->height; i += data->proc_num) {
+      run = i * data->width;
+      for (int j = 0; j < data->width; j++) {
+        image[run + j] = tmp[run + j];
+      }
+    }
   }
+  free(tmp);
   pthread_exit(NULL);
 }
 

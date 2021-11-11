@@ -7,7 +7,7 @@ hw2b: CC = mpicc
 hw2b: CXX = mpicxx
 hw2b: CFLAGS += -fopenmp
 CXXFLAGS = $(CFLAGS)
-TARGETS = hw2seq hw2a hw2b
+TARGETS = hw2a
 
 .PHONY: all
 all: $(TARGETS)
