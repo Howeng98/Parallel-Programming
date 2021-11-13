@@ -11,7 +11,7 @@
 ### Pthread Scalability Result
   Speedup Factor      |  Time Profile
 :-------------------------:|:-------------------------:
-![](hw2/hw2_a/speedup/images/strict11_speedup.png)  |  ![](hw2/hw2_a/speedup/images/strict11_time_profile_bar.png)
+![](/hw2/hw2_a/speedup/images/strict11_speedup.png)  |  ![](/hw2/hw2_a/speedup/images/strict11_time_profile_bar.png)
 
 
 ### Hybrid Scalability Result
@@ -21,5 +21,5 @@
 
 ### Load Balancing Result
 <p align="center">
-  <img width="500" height="400" src="hw2/hw2_a/load_balance/images/strict11_time_profile_bar.png">
+  <img width="500" height="400" src="/hw2/hw2_a/load_balance/images/strict11_time_profile_bar.png">
 </p>
