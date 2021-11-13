@@ -17,6 +17,12 @@ I provide some template tools for you to calculate IO, CPU and Compute time. Bes
 ## Lab2
 - There are three labs this time including Pthread, OpenMP and hybrid of MPI and OpenMP.
 - These three labs require you to do the same problem as the lab1 to calculate how many pixels in a circle.
+- Scoreboard rank (Pthread): 4/48
+- Scoreboard rank (OpenMP): 3/47
+- Scoreboard rank (OpenMP+MPI): 2/48
 
 ## HW2
 - HW2 needs you implement mandelbrot set with Pthread and hybrid of MPI and OpenMP.
+- Scoreboard rank (Pthread): 2/47
+- Scoreboard rank (OpenMP+MPI): 2/47
+- [Result](./hw2/README.md)
