@@ -1,5 +1,0 @@
-nproc=7
-r=2147483
-k=2147483
-answer=1748568
-timelimit=3

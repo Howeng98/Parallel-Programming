@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
   pool.upper = upper;
   pool.width = width;
   pool.height = height;
-  pool.chunk_size = 500;
+  pool.chunk_size = 100;
   
 
   for (int i = 0; i < ncpus; i++) {
