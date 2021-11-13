@@ -9,7 +9,7 @@ hw2a: CFLAGS += -ffast-math
 hw2a: CFLAGS += -pthread
 hw2b: -cc=clang
 hw2b: -cxx=clang++
-hw2b: CFLAGS += -march=athlon64
+hw2b: CFLAGS += -march=native
 hw2b: CFLAGS += -ffast-math
 hw2b: CFLAGS += -fno-associative-math
 hw2b: CFLAGS += -fopenmp
