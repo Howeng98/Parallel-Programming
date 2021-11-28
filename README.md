@@ -28,3 +28,7 @@ I provide some template tools for you to calculate IO, CPU and Compute time. Bes
 - [Result](./hw2/README.md)
 
 ## Lab3 && Lab4
+- Lab3 needs you to calculate Sobel of the images with CUDA.
+- [Lab3 Result](./lab3/README.md)
+- Lab4 needs you optimize kernel calculation.
+- [Lab4 Solution](./lab4/README.md)
