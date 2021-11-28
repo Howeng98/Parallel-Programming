@@ -26,3 +26,5 @@ I provide some template tools for you to calculate IO, CPU and Compute time. Bes
 - Scoreboard rank (Pthread): 2/47
 - Scoreboard rank (OpenMP+MPI): 2/47
 - [Result](./hw2/README.md)
+
+## Lab3 && Lab4
