@@ -10,7 +10,7 @@
 #define SCALE 8
 #define FLAG_X (MASK_X % 2 == 1) ? 1 : 0
 #define FLAG_Y (MASK_Y % 2 == 1) ? 1 : 0
-#define THREAD 128
+#define THREAD 256
 
 /* Hint 7 */
 // this variable is used by device
@@ -112,82 +112,84 @@ __global__ void sobel(unsigned char *s, unsigned char *t, unsigned height, unsig
 
   x = blockDim.x * blockIdx.x + threadIdx.x;
   y = blockIdx.y;
-  xBound = MASK_X / 2;
-  yBound = MASK_Y / 2;
+  xBound = MASK_X >> 1;
+  yBound = MASK_Y >> 1;
   adjustX = FLAG_X;
   adjustY = FLAG_Y;
   __shared__ unsigned char R_arr[5][THREAD + 5];
   __shared__ unsigned char G_arr[5][THREAD + 5];
   __shared__ unsigned char B_arr[5][THREAD + 5];
 
-  for (v = -yBound; v < yBound + adjustY; v++) {
-    if (y + v >= 0 && y + v < height) {
-      R_arr[v + yBound][threadIdx.x + 2] = s[channels * (width * (y + v) + x) + 2];
-      G_arr[v + yBound][threadIdx.x + 2] = s[channels * (width * (y + v) + x) + 1];
-      B_arr[v + yBound][threadIdx.x + 2] = s[channels * (width * (y + v) + x) + 0];
-      if (threadIdx.x == 0 && x >= 2 && x < width - 2) {
-        R_arr[v + yBound][threadIdx.x] = s[channels * (width * (y + v) + (x - 2)) + 2];
-        G_arr[v + yBound][threadIdx.x] = s[channels * (width * (y + v) + (x - 2)) + 1];
-        B_arr[v + yBound][threadIdx.x] = s[channels * (width * (y + v) + (x - 2)) + 0];
-        R_arr[v + yBound][threadIdx.x + 1] = s[channels * (width * (y + v) + (x - 1)) + 2];
-        G_arr[v + yBound][threadIdx.x + 1] = s[channels * (width * (y + v) + (x - 1)) + 1];
-        B_arr[v + yBound][threadIdx.x + 1] = s[channels * (width * (y + v) + (x - 1)) + 0];
-      } else if (threadIdx.x == blockDim.x - 1 && x < width - 2) {
-        R_arr[v + yBound][threadIdx.x + 3] = s[channels * (width * (y + v) + (x + 1)) + 2];
-        G_arr[v + yBound][threadIdx.x + 3] = s[channels * (width * (y + v) + (x + 1)) + 1];
-        B_arr[v + yBound][threadIdx.x + 3] = s[channels * (width * (y + v) + (x + 1)) + 0];
-        R_arr[v + yBound][threadIdx.x + 4] = s[channels * (width * (y + v) + (x + 2)) + 2];
-        G_arr[v + yBound][threadIdx.x + 4] = s[channels * (width * (y + v) + (x + 2)) + 1];
-        B_arr[v + yBound][threadIdx.x + 4] = s[channels * (width * (y + v) + (x + 2)) + 0];
-      }
-    }
-  }
-  __syncthreads();
-
-  for (i = 0; i < MASK_N; ++i) {
-
-    val[i * 3 + 2] = 0.0;
-    val[i * 3 + 1] = 0.0;
-    val[i * 3] = 0.0;
-
-    for (v = -yBound; v < yBound + adjustY; ++v) {
-      for (u = -xBound; u < xBound + adjustX; ++u) {
-        if ((x + u) >= 0 && (x + u) < width && y + v >= 0 && y + v < height) {
-          R = R_arr[v + yBound][threadIdx.x + u + 2];
-          G = G_arr[v + yBound][threadIdx.x + u + 2];
-          B = B_arr[v + yBound][threadIdx.x + u + 2];
-          val[i * 3 + 2] += R * mask[i][u + xBound][v + yBound];
-          val[i * 3 + 1] += G * mask[i][u + xBound][v + yBound];
-          val[i * 3 + 0] += B * mask[i][u + xBound][v + yBound];
+  #pragma unroll(2)
+  for (; y < height; y += gridDim.y) {
+    for (v = -yBound; v < yBound + adjustY; v++) {
+      if (y + v >= 0 && y + v < height) {
+        R_arr[v + yBound][threadIdx.x + 2] = s[channels * (width * (y + v) + x) + 2];
+        G_arr[v + yBound][threadIdx.x + 2] = s[channels * (width * (y + v) + x) + 1];
+        B_arr[v + yBound][threadIdx.x + 2] = s[channels * (width * (y + v) + x) + 0];
+        if (threadIdx.x == 0 && x >= 2 && x < width - 2) {
+          R_arr[v + yBound][threadIdx.x] = s[channels * (width * (y + v) + (x - 2)) + 2];
+          G_arr[v + yBound][threadIdx.x] = s[channels * (width * (y + v) + (x - 2)) + 1];
+          B_arr[v + yBound][threadIdx.x] = s[channels * (width * (y + v) + (x - 2)) + 0];
+          R_arr[v + yBound][threadIdx.x + 1] = s[channels * (width * (y + v) + (x - 1)) + 2];
+          G_arr[v + yBound][threadIdx.x + 1] = s[channels * (width * (y + v) + (x - 1)) + 1];
+          B_arr[v + yBound][threadIdx.x + 1] = s[channels * (width * (y + v) + (x - 1)) + 0];
+        } else if (threadIdx.x == blockDim.x - 1 && x < width - 2) {
+          R_arr[v + yBound][threadIdx.x + 3] = s[channels * (width * (y + v) + (x + 1)) + 2];
+          G_arr[v + yBound][threadIdx.x + 3] = s[channels * (width * (y + v) + (x + 1)) + 1];
+          B_arr[v + yBound][threadIdx.x + 3] = s[channels * (width * (y + v) + (x + 1)) + 0];
+          R_arr[v + yBound][threadIdx.x + 4] = s[channels * (width * (y + v) + (x + 2)) + 2];
+          G_arr[v + yBound][threadIdx.x + 4] = s[channels * (width * (y + v) + (x + 2)) + 1];
+          B_arr[v + yBound][threadIdx.x + 4] = s[channels * (width * (y + v) + (x + 2)) + 0];
         }
       }
     }
-  }
+    __syncthreads();
 
-  if (x < width) {
-    float totalR = 0.0;
-    float totalG = 0.0;
-    float totalB = 0.0;
-    
-    #pragma unroll(2)
-    for (i = 0; i < MASK_N; i+=1) {
-      totalR += val[i * 3 + 2] * val[i * 3 + 2];
-      totalG += val[i * 3 + 1] * val[i * 3 + 1];
-      totalB += val[i * 3 + 0] * val[i * 3 + 0];
+    for (i = 0; i < MASK_N; ++i) {
+
+      val[i * 3 + 2] = 0.0;
+      val[i * 3 + 1] = 0.0;
+      val[i * 3] = 0.0;
+
+      for (v = -yBound; v < yBound + adjustY; ++v) {
+        for (u = -xBound; u < xBound + adjustX; ++u) {
+          if ((x + u) >= 0 && (x + u) < width && y + v >= 0 && y + v < height) {
+            R = R_arr[v + yBound][threadIdx.x + u + 2];
+            G = G_arr[v + yBound][threadIdx.x + u + 2];
+            B = B_arr[v + yBound][threadIdx.x + u + 2];
+            val[i * 3 + 2] += R * mask[i][u + xBound][v + yBound];
+            val[i * 3 + 1] += G * mask[i][u + xBound][v + yBound];
+            val[i * 3 + 0] += B * mask[i][u + xBound][v + yBound];
+          }
+        }
+      }
     }
 
-    totalR = sqrt(totalR) / SCALE;
-    totalG = sqrt(totalG) / SCALE;
-    totalB = sqrt(totalB) / SCALE;
-    const unsigned char cR = (totalR > 255.0) ? 255 : totalR;
-    const unsigned char cG = (totalG > 255.0) ? 255 : totalG;
-    const unsigned char cB = (totalB > 255.0) ? 255 : totalB;
-    t[channels * (width * y + x) + 2] = cR;
-    t[channels * (width * y + x) + 1] = cG;
-    t[channels * (width * y + x) + 0] = cB;
+    if (x < width) {
+      float totalR = 0.0;
+      float totalG = 0.0;
+      float totalB = 0.0;
+      
+      #pragma unroll(2)
+      for (i = 0; i < MASK_N; i+=1) {
+        totalR += val[i * 3 + 2] * val[i * 3 + 2];
+        totalG += val[i * 3 + 1] * val[i * 3 + 1];
+        totalB += val[i * 3 + 0] * val[i * 3 + 0];
+      }
+
+      totalR = sqrt(totalR) / SCALE;
+      totalG = sqrt(totalG) / SCALE;
+      totalB = sqrt(totalB) / SCALE;
+      const unsigned char cR = (totalR > 255.0) ? 255 : totalR;
+      const unsigned char cG = (totalG > 255.0) ? 255 : totalG;
+      const unsigned char cB = (totalB > 255.0) ? 255 : totalB;
+      t[channels * (width * y + x) + 2] = cR;
+      t[channels * (width * y + x) + 1] = cG;
+      t[channels * (width * y + x) + 0] = cB;
+    }
   }
 }
-  //}
 
 int main(int argc, char **argv) {
 
@@ -201,7 +203,7 @@ int main(int argc, char **argv) {
 
   int threads = THREAD;
   int x = (width % THREAD) ? width / THREAD + 1 : width / THREAD;
-  int y = height;
+  int y = 1024;
   dim3 blocks(x, y);
 
   cudaMalloc(&d_src, height * threads * width * channels * sizeof(unsigned char));
