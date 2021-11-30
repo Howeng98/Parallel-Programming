@@ -1,7 +1,7 @@
-CC = gcc
-CXX = g++
-CXXFLAGS = -O3 -pthread
-CFLAGS = -O3 -lm -pthread
+CC = clang
+CXX = clang++
+CXXFLAGS = -O3 -fopenmp -march=native
+CFLAGS = -O3 -lm -fopenmp -march=native
 TARGETS = hw3-1
 
 .PHONY: all
