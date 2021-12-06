@@ -1,10 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <cuda_runtime.h>
+#include <sys/mman.h>
+#include <sys/stat.h> 
+#include <sys/types.h>
+#include <fcntl.h>
+#include <unistd.h>
 #define B 64
 #define B_half 32
 
-const int INF = ((1 << 30) - 1);
+const int INF = 0x3f3f3f3f;
 int *Dist = NULL;
 int n, m, N;
 
@@ -32,8 +38,10 @@ inline int ceil(int a, int b) { return (a + b - 1) / b; }
 inline void block_FW() {
 	int round = ceil(n, B);
 	int *dst = NULL;
-	cudaMalloc(&dst, N*N*sizeof(int));
-	cudaMemcpy(dst, Dist, N*N*sizeof(int), cudaMemcpyHostToDevice);
+	unsigned int size = N*N*sizeof(int);
+	cudaHostRegister(Dist, size, cudaHostRegisterDefault);
+	cudaMalloc(&dst, size);
+	cudaMemcpy(dst, Dist, size, cudaMemcpyHostToDevice);
 	
 	int blocks = (N + B - 1) / B;
 	dim3 block_dim(32, 32);
@@ -214,29 +222,28 @@ inline void output(char* outFileName) {
 }
 
 inline void input(char* infile) {
-	FILE* file = fopen(infile, "rb");
-	fread(&n, sizeof(int), 1, file);
-	fread(&m, sizeof(int), 1, file);
+	int file = open(infile, O_RDONLY);
+	int *ft = (int*)mmap(NULL, 2*sizeof(int), PROT_READ, MAP_PRIVATE, file, 0);
+  n = ft[0];
+	m = ft[1];
+	int *pair = (int*)(mmap(NULL, (3 * m + 2) * sizeof(int), PROT_READ, MAP_PRIVATE, file, 0));
 
 	if (n % B) N = n + (B - n % B);
 	else N = n;
-	cudaHostAlloc(&Dist, N*N*sizeof(int), 1);
+
+	Dist = (int*)malloc(N*N*sizeof(int));
+	
 
 	for (int i = 0; i < N; ++i) {
-		for (int j = 0; j < N; ++j) {
-			if (i == j) {
-				Dist[i*N+j] = 0;
-			} else {
-				Dist[i*N+j] = INF;
-			}
+    for (int j = 0; j < N; ++j) {
+			Dist[i*N+j] = INF;
+			if (i == j) Dist[i*N+j] = 0;
 		}
-	}
+  }
 
-	int pair[3];
+	#pragma unroll
 	for (int i = 0; i < m; ++i) {
-		fread(pair, sizeof(int), 3, file);
-		Dist[pair[0]*N+pair[1]]= pair[2];
+		Dist[pair[i*3+2]*N+pair[i*3+3]]= pair[i*3+4];
 	}
-
-	fclose(file);
+	close(file);
 }
