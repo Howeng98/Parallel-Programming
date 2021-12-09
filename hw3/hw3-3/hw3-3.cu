@@ -7,10 +7,12 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <omp.h>
+
 #define B 64
 #define B_half 32
 
-const int INF = 0x3f3f3f3f;
+const int INF = ((1 << 30) - 1);
 int *Dist = NULL;
 int n, m, N;
 
@@ -18,58 +20,72 @@ inline void input(char* infile);
 inline void output(char* outFileName);
 inline int ceil(int a, int b);
 inline void block_FW();
-inline void floyed_warshall();
 __global__ void phase_one(int *dst, int Round, int N);
 __global__ void phase_two(int *dst, int Round, int N);
-__global__ void phase_three(int *dst, int Round, int N);
+__global__ void phase_three(int *dst, int Round, int N, int row_offset);
 
 __device__ int Min(int a, int b) {
 	return min(a, b);
-} 
+}
 
 int main(int argc, char* argv[]) {
 	input(argv[1]);
-	if (n <= 500) floyed_warshall();
-	else block_FW();
+	block_FW();
 	output(argv[2]);
 	return 0;
-}
-
-inline void floyed_warshall() {
-	for (int k = 0; k < n; k++) {
-		for (int i = 0; i < n; i++) {
-			for (int j = 0; j < n; j++) {
-				if (Dist[i*N+j] > Dist[i*N+k] + Dist[k*N+j]) {
-					Dist[i*N+j] = Dist[i*N+k] + Dist[k*N+j];
-				}
-			}
-		}
-	}
 }
 
 inline int ceil(int a, int b) { return (a + b - 1) / b; }
 
 inline void block_FW() {
 	int round = ceil(n, B);
-	int *dst = NULL;
-	unsigned int size = N*N*sizeof(int);
-	cudaHostRegister(Dist, size, cudaHostRegisterDefault);
-	cudaMalloc(&dst, size);
-	cudaMemcpy(dst, Dist, size, cudaMemcpyHostToDevice);
+	int* dst[2];
+
+	cudaHostRegister(Dist, N*N*sizeof(int), cudaHostRegisterDefault);
 	
 	int blocks = (N + B - 1) / B;
 	dim3 block_dim(32, 32);
-	dim3 grid_dim(blocks, blocks);
-	for (int r = 0; r < round; ++r) {
-		// phase 1
-		phase_one<<<1, block_dim>>>(dst, r, N);
-		// phase 2
-		phase_two<<<blocks, block_dim>>>(dst, r, N);
-		// phase 3
-		phase_three<<<grid_dim, block_dim>>>(dst, r, N);
+
+	#pragma omp parallel num_threads(2)
+	{
+		// get thread number
+		unsigned int cpu_thread_id = omp_get_thread_num();
+		// thread neighbor number
+		unsigned int cpu_thread_id_nei = !cpu_thread_id;
+
+		// thread set its device and malloc same memory in the device
+		cudaSetDevice(cpu_thread_id);
+		cudaMalloc(&dst[cpu_thread_id], N*N*sizeof(int));
+ 
+		unsigned int start_offset = (cpu_thread_id == 1) ? round / 2 : 0;
+		unsigned int total_row = round / 2;
+		if (round % 2 == 1 && cpu_thread_id == 1) total_row += 1;
+
+		dim3 grid_dim(blocks, total_row);
+
+		unsigned int dist_offset = start_offset * N * B;
+		unsigned int total_byte_num = total_row * N * B * sizeof(int);
+		unsigned int one_row_byte_num = B * N * sizeof(int);
+
+		cudaMemcpy(dst[cpu_thread_id] + dist_offset, Dist + dist_offset, total_byte_num, cudaMemcpyHostToDevice);
+
+		for (int r = 0; r < round; ++r) {
+			unsigned int start_offset_num = r * B * N;
+			if (r >= start_offset && r < (start_offset + total_row) && r != 0) {
+				cudaMemcpy(Dist + start_offset_num, dst[cpu_thread_id] + start_offset_num, one_row_byte_num, cudaMemcpyDeviceToHost);
+			}
+			cudaDeviceSynchronize();
+			#pragma omp barrier
+			cudaMemcpy(dst[cpu_thread_id] + start_offset_num, Dist + start_offset_num, one_row_byte_num, cudaMemcpyHostToDevice);
+			phase_one<<<1, block_dim>>>(dst[cpu_thread_id], r, N);
+			phase_two<<<blocks, block_dim>>>(dst[cpu_thread_id], r, N);
+			phase_three<<<grid_dim, block_dim>>>(dst[cpu_thread_id], r, N, start_offset);
+			cudaDeviceSynchronize();
+		}
+		cudaMemcpy(Dist + dist_offset, dst[cpu_thread_id] + dist_offset, total_byte_num, cudaMemcpyDeviceToHost);
 	}
-	cudaMemcpy(Dist, dst, N*N*sizeof(int), cudaMemcpyDeviceToHost);
-	cudaFree(dst);
+	cudaFree(dst[0]);
+	cudaFree(dst[1]);
 }
 
 __global__ void phase_one(int *dst, int Round, int N) {
@@ -155,7 +171,7 @@ __global__ void phase_two(int *dst, int Round, int N) {
 		hor[i][j+B_half] = Min(hor[i][j+B_half], s[i][k] + hor[k][j+B_half]);
 		hor[i+B_half][j] = Min(hor[i+B_half][j], s[i+B_half][k] + hor[k][j]);
 		hor[i+B_half][j+B_half] = Min(hor[i+B_half][j+B_half], s[i+B_half][k] + hor[k][j+B_half]);
-		
+
 		__syncthreads();
 	}
 
@@ -170,21 +186,22 @@ __global__ void phase_two(int *dst, int Round, int N) {
 	dst[hor_place_down_right] = hor[i+B_half][j+B_half];
 }
 
-__global__ void phase_three(int *dst, int Round, int N) {
-	if (blockIdx.x == Round || blockIdx.y == Round) return;
+__global__ void phase_three(int *dst, int Round, int N, int row_offset) {
+	if (blockIdx.x == Round || blockIdx.y + row_offset == Round) return;
 
+	int block_y = blockIdx.y + row_offset;
 	int i = threadIdx.y;
 	int j = threadIdx.x;
 
-	int self_place = blockIdx.y * B * N + blockIdx.x * B + i * N + j;
-	int self_place_right = blockIdx.y * B * N + blockIdx.x * B + i * N + j + B_half;
-	int self_place_down = blockIdx.y * B * N + blockIdx.x * B + (i + B_half) * N + j;
-	int self_place_down_right = blockIdx.y * B * N + blockIdx.x * B + (i + B_half) * N + j + B_half;
+	int self_place = block_y * B * N + blockIdx.x * B + i * N + j;
+	int self_place_right = block_y * B * N + blockIdx.x * B + i * N + j + B_half;
+	int self_place_down = block_y * B * N + blockIdx.x * B + (i + B_half) * N + j;
+	int self_place_down_right = block_y * B * N + blockIdx.x * B + (i + B_half) * N + j + B_half;
 
-	int a_place = blockIdx.y * B * N + Round * B + i * N + j;
-	int a_place_right = blockIdx.y * B * N + Round * B + i * N + j + B_half;
-	int a_place_down = blockIdx.y * B * N + Round * B + (i + B_half) * N + j;
-	int a_place_down_right = blockIdx.y * B * N + Round * B + (i + B_half) * N + j + B_half;
+	int a_place = block_y * B * N + Round * B + i * N + j;
+	int a_place_right = block_y * B * N + Round * B + i * N + j + B_half;
+	int a_place_down = block_y * B * N + Round * B + (i + B_half) * N + j;
+	int a_place_down_right = block_y * B * N + Round * B + (i + B_half) * N + j + B_half;
 
 	int b_place = Round * B * N + blockIdx.x * B + i * N + j;
 	int b_place_right = Round * B * N + blockIdx.x * B + i * N + j + B_half;
@@ -228,7 +245,6 @@ __global__ void phase_three(int *dst, int Round, int N) {
 inline void output(char* outFileName) {
 	FILE* outfile = fopen(outFileName, "w");
 	for (int i = 0; i < n; ++i) {
-		#pragma unroll 4
 		for (int j = 0; j < n; ++j) {
 			if (Dist[i*N+j] >= INF) Dist[i*N+j] = INF;
 		}
@@ -247,7 +263,7 @@ inline void input(char* infile) {
 	if (n % B) N = n + (B - n % B);
 	else N = n;
 
-	Dist = (int*)malloc(N*N*sizeof(int));
+	Dist = (int*)malloc(sizeof(int)*N*N);
 	
 
 	for (int i = 0; i < N; ++i) {
@@ -257,7 +273,7 @@ inline void input(char* infile) {
 		}
   }
 
-	#pragma unroll
+	#pragma unroll 4
 	for (int i = 0; i < m; ++i) {
 		Dist[pair[i*3+2]*N+pair[i*3+3]]= pair[i*3+4];
 	}
