@@ -68,19 +68,18 @@ inline void block_FW() {
 		unsigned int one_row_byte_num = B * N * sizeof(int);
 
 		cudaMemcpy(dst[cpu_thread_id] + dist_offset, Dist + dist_offset, total_byte_num, cudaMemcpyHostToDevice);
+		cudaDeviceEnablePeerAccess(cpu_thread_id_nei, 0);
+		#pragma omp barrier
 
 		for (int r = 0; r < round; ++r) {
 			unsigned int start_offset_num = r * B * N;
-			if (r >= start_offset && r < (start_offset + total_row) && r != 0) {
-				cudaMemcpy(Dist + start_offset_num, dst[cpu_thread_id] + start_offset_num, one_row_byte_num, cudaMemcpyDeviceToHost);
+			if (r >= start_offset && r < (start_offset + total_row)) {
+				cudaMemcpy(dst[cpu_thread_id_nei] + start_offset_num, dst[cpu_thread_id] + start_offset_num, one_row_byte_num, cudaMemcpyDefault);
 			}
-			cudaDeviceSynchronize();
 			#pragma omp barrier
-			cudaMemcpy(dst[cpu_thread_id] + start_offset_num, Dist + start_offset_num, one_row_byte_num, cudaMemcpyHostToDevice);
 			phase_one<<<1, block_dim>>>(dst[cpu_thread_id], r, N);
 			phase_two<<<blocks, block_dim>>>(dst[cpu_thread_id], r, N);
 			phase_three<<<grid_dim, block_dim>>>(dst[cpu_thread_id], r, N, start_offset);
-			cudaDeviceSynchronize();
 		}
 		cudaMemcpy(Dist + dist_offset, dst[cpu_thread_id] + dist_offset, total_byte_num, cudaMemcpyDeviceToHost);
 	}
