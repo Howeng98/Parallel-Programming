@@ -1,2 +1,6 @@
 cases
 *.out
+.*
+venv
+testcases
+qles
