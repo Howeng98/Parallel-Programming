@@ -12,10 +12,10 @@ clean:
 	rm -f $(EXES)
 
 seq: seq.cc
-	g++ $(CXXFLAGS) -o $@ $?
+	$(CXX) $(CXXFLAGS) -o $@ $?
 
 hw3-1: hw3-1.cc
-	CXX $(CXXFLAGS) -o $@ $?
+	$(CXX) $(CXXFLAGS) -o $@ $?
 
 hw3-3: hw3-3.cu
 	nvcc $(NVFLAGS) $(LDFLAGS) -o $@ $?
