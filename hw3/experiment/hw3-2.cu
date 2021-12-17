@@ -23,15 +23,35 @@ __global__ void phase_one(int *dst, int Round, int N);
 __global__ void phase_two(int *dst, int Round, int N);
 __global__ void phase_three(int *dst, int Round, int N);
 
+struct timespec start, timeEnd;
+double io_time=0.0;
+double timeDiff(struct timespec start, struct timespec timeEnd){
+    // function used to measure time in nano resolution
+    float output;
+    float nano = 1000000000.0;
+    if(timeEnd.tv_nsec < start.tv_nsec) output = ((timeEnd.tv_sec - start.tv_sec -1)+(nano+timeEnd.tv_nsec-start.tv_nsec)/nano);
+    else output = ((timeEnd.tv_sec - start.tv_sec)+(timeEnd.tv_nsec-start.tv_nsec)/nano);
+    return output;
+}
+
 __device__ int Min(int a, int b) {
 	return min(a, b);
 } 
 
 int main(int argc, char* argv[]) {
+	clock_gettime(CLOCK_MONOTONIC, &start); 
 	input(argv[1]);
+	clock_gettime(CLOCK_MONOTONIC, &timeEnd);
+  io_time += timeDiff(start, timeEnd);
+
 	if (n <= 500) floyed_warshall();
 	else block_FW();
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
 	output(argv[2]);
+	clock_gettime(CLOCK_MONOTONIC, &timeEnd);
+	io_time += timeDiff(start, timeEnd);
+	printf("io time: %lf\n\n\n", io_time);
 	return 0;
 }
 
