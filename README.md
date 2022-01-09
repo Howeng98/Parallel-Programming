@@ -35,6 +35,7 @@ I provide some template tools for you to calculate IO, CPU and Compute time. Bes
 
 ## HW3
 - HW3 needs you to implement All-Pairs-Shortest-Path with multiple threads, single GPU and multiple GPU
+- [HW3 optimization skill](./hw3/README.md)
 - Scoreboard rank (multiple threads): 13/41
 - Scoreboard rank (Single GPU): 7/40
 - Scoreboard rank (Multiple GPU): 2/40
