@@ -32,3 +32,9 @@ I provide some template tools for you to calculate IO, CPU and Compute time. Bes
 - [Lab3 Result](./lab3/README.md)
 - Lab4 needs you optimize kernel calculation.
 - [Lab4 Solution](./lab4/README.md)
+
+## HW3
+- HW3 needs you to implement All-Pairs-Shortest-Path with multiple threads, single GPU and multiple GPU
+- Scoreboard rank (multiple threads): 13/41
+- Scoreboard rank (Single GPU): 7/40
+- Scoreboard rank (Multiple GPU): 2/40
